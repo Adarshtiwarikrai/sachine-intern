@@ -60,12 +60,7 @@ interface SummaryModalProps {
 interface DailyLogModalProps {
   dark: boolean;
   habit: Habit;
-  log: {
-    habitId: string;
-    day: string;
-    value: number;
-    notes: string;
-  } | DailyLog;
+  log: DailyLog;
   onClose: () => void;
   onSave: (log: DailyLog) => void;
 }
