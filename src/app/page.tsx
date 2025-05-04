@@ -50,6 +50,60 @@ interface DailyLog {
   notes: string;
   timestamp: number;
 }
+
+interface SummaryModalProps {
+  habits: Habit[];
+  pastWeeks: Record<string, DayEntry[][]>;
+  onClose: () => void;
+}
+
+interface DailyLogModalProps {
+  dark: boolean;
+  habit: Habit;
+  log: {
+    habitId: string;
+    day: string;
+    value: number;
+    notes: string;
+  } | DailyLog;
+  onClose: () => void;
+  onSave: (log: { day: string; value: number; notes: string }) => void;
+}
+
+interface LogDetailsProps {
+  dark: boolean;
+  habit: Habit;
+  onClose: () => void;
+  onEditLog: (log: DailyLog) => void;
+}
+
+interface EditGoalModalProps {
+  dark: boolean;
+  editingGoal: { habitId: string; goal: number };
+  setEditingGoal: (v: null) => void;
+  onUpdateGoal: (habitId: string, newGoal: number) => void;
+}
+interface NavProps {
+  dark: boolean;
+  setDark: (dark: boolean) => void;
+  view: "landing" | "dashboard";
+  setView: (view: "landing" | "dashboard") => void;
+  setAddOpen: (open: boolean) => void;
+  setSummaryOpen: (open: boolean) => void;
+  emailReminderEnabled: boolean;
+  setEmailReminderEnabled: (enabled: boolean) => void;
+}
+
+interface LandingProps {
+  onStart: () => void;
+}
+interface AddHabitModalProps {
+  dark: boolean;
+  newHabit: { name: string; unit: string; goal: number };
+  setNewHabit: React.Dispatch<React.SetStateAction<{ name: string; unit: string; goal: number }>>;
+  onClose: () => void;
+  onCreate: () => void;
+}
 const WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const COLORS = [
   "#4f46e5",
@@ -65,8 +119,11 @@ const COLORS = [
   const today = () => ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()];
 const generateId = () => Math.random().toString(36).substring(2, 11); // 9-character random ID
 const emptyWeek = () => WEEK.map((d) => ({ id: generateId(), day: d, value: 0 }));
-const sortByWeek = (a: DayEntry, b: DayEntry) =>
-  WEEK.indexOf(a.day as any) - WEEK.indexOf(b.day as any);
+const sortByWeek = (a: DayEntry, b: DayEntry): number => {
+  const dayA = a.day as typeof WEEK[number];
+  const dayB = b.day as typeof WEEK[number];
+  return WEEK.indexOf(dayA) - WEEK.indexOf(dayB);
+};
 
 export default function HabitFlow() {
   const [dark, setDark] = useState(true);
@@ -417,7 +474,7 @@ function Nav({
   setSummaryOpen,
   emailReminderEnabled,
   setEmailReminderEnabled,
-}: any) {
+}:NavProps) {
   return (
     <motion.nav
       initial={{ y: -50 }}
@@ -511,7 +568,7 @@ function Nav({
   );
 }
 
-function Landing({ onStart }: any) {
+function Landing({ onStart }: LandingProps) {
   const [particles] = useState(() =>
     Array.from({ length: 40 }, () => ({
       size: Math.random() * 8 + 4,
@@ -1387,7 +1444,7 @@ function AddHabitModal({
   setNewHabit,
   onClose,
   onCreate,
-}: any) {
+}: AddHabitModalProps ) {
   return (
     <AnimatePresence>
       {/* Enhanced backdrop animation */}
