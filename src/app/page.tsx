@@ -214,7 +214,18 @@ export default function HabitFlow() {
     toast("🎯 Goal updated successfully");
   };
 
-  const handleUpdateLog = (updatedLog: DailyLog) => {
+  const handleUpdateLog = (log: { day: string; value: number; notes: string }) => {
+    if (!editingLog) return;
+  
+    const updatedLog: DailyLog = {
+      ...editingLog,
+      day: log.day,
+      value: log.value,
+      notes: log.notes,
+      // timestamp can be updated to now if needed
+      timestamp: Date.now()
+    };
+  
     setHabits((prev) =>
       prev.map((h) =>
         h.id === updatedLog.habitId
@@ -230,7 +241,7 @@ export default function HabitFlow() {
           : h
       )
     );
-
+  
     toast("📝 Log updated successfully");
     setEditingLog(null);
   };
