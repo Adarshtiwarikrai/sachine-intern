@@ -67,7 +67,7 @@ interface DailyLogModalProps {
     notes: string;
   } | DailyLog;
   onClose: () => void;
-  onSave: (log: { day: string; value: number; notes: string }) => void;
+  onSave: (log: DailyLog) => void;
 }
 
 interface LogDetailsProps {
