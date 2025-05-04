@@ -23,7 +23,7 @@ import {
   PolarRadiusAxis,
 } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
-import { v4 as uuidv4 } from "uuid";
+
 
 interface DayEntry {
   id: string;
@@ -61,9 +61,10 @@ const COLORS = [
   "#8b5cf6",
 ];
 
-const today = () =>
-  new Date().toLocaleDateString("en-US", { weekday: "short" });
-const emptyWeek = () => WEEK.map((d) => ({ id: uuidv4(), day: d, value: 0 }));
+
+  const today = () => ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()];
+const generateId = () => Math.random().toString(36).substring(2, 11); // 9-character random ID
+const emptyWeek = () => WEEK.map((d) => ({ id: generateId(), day: d, value: 0 }));
 const sortByWeek = (a: DayEntry, b: DayEntry) =>
   WEEK.indexOf(a.day as any) - WEEK.indexOf(b.day as any);
 
@@ -79,14 +80,7 @@ export default function HabitFlow() {
     habitId: string;
     goal: number;
   }>(null);
-  const [emailReminderEnabled, setEmailReminderEnabled] = useState<boolean>(
-    () => {
-      if (typeof window !== "undefined") {
-        return localStorage.getItem("emailReminder") === "true";
-      }
-      return false;
-    }
-  );
+  const [emailReminderEnabled, setEmailReminderEnabled] = useState<boolean>(false);
 
   useEffect(() => {
     localStorage.setItem("emailReminder", String(emailReminderEnabled));
@@ -137,7 +131,7 @@ export default function HabitFlow() {
     const normalizedDay = WEEK.find((d) => log.day.startsWith(d)) || log.day;
 
     const newLog: DailyLog = {
-      id: uuidv4(),
+      id: generateId(),
       habitId: habit.id,
       date: new Date().toISOString(),
       day: log.day,
@@ -212,7 +206,7 @@ export default function HabitFlow() {
     setHabits((h) => [
       ...h,
       {
-        id: uuidv4(),
+        id: generateId(),
         name: newHabit.name.trim(),
         unit: newHabit.unit,
         goal: newHabit.goal,
@@ -232,7 +226,7 @@ export default function HabitFlow() {
     const timestamp = Date.now();
     const date = new Date().toISOString();
     const newLog: DailyLog = {
-      id: uuidv4(),
+      id: generateId(),
       habitId: hid,
       date,
       day,
@@ -248,7 +242,7 @@ export default function HabitFlow() {
               ...h,
               history: [
                 ...h.history.filter((d) => d.day !== day),
-                { id: uuidv4(), day, value: val },
+                { id: generateId(), day, value: val },
               ].sort(sortByWeek),
               current: day === today() ? val : h.current,
               logs: [...h.logs, newLog],
