@@ -82,9 +82,7 @@ export default function HabitFlow() {
   }>(null);
   const [emailReminderEnabled, setEmailReminderEnabled] = useState<boolean>(false);
 
-  useEffect(() => {
-    localStorage.setItem("emailReminder", String(emailReminderEnabled));
-  }, [emailReminderEnabled]);
+  
 
   const handleViewLogs = (habitId: string) => {
     setLogDetailsOpen(habitId);
