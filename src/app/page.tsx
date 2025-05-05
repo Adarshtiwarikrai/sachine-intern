@@ -867,7 +867,7 @@ function Dashboard({
         : `rgba(79, 70, 229, ${Math.random() * 0.2 + 0.1})`,
     }))
   );
-
+  const chartTypes: ("line" | "bar" | "pie")[] = ["line", "bar", "pie"];
   const handleViewLogs = (habitId: string) => {
     setLogDetailsOpen(habitId);
   };
@@ -1101,12 +1101,13 @@ function Dashboard({
                                   ...weeks,
                                   [hh.id]: [
                                     ...(weeks[hh.id] || []),
-                                    hh.history.map((entry,idx) => ({ id: `${hh.id}-${idx}`,...entry })),
+                                    hh.history.map((entry,idx) => ({   ...entry,id: `${hh.id}-${idx}-${Date.now()}` })),
                                   ],
                                 }));
                                 return {
                                   ...hh,
-                                  history: WEEKDAYS.map((day) => ({
+                                  history: WEEKDAYS.map((day,idx) => ({
+                                      id: `${hh.id}-${idx}-${Date.now()}`,
                                     day,
                                     value: 0,
                                   })),
@@ -1243,7 +1244,8 @@ function Dashboard({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
               >
-                {["line", "bar", "pie"].map((t) => (
+             
+                {chartTypes.map((t) => (
                   <motion.button
                     key={t}
                     whileHover={{ scale: 1.1 }}
