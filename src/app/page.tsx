@@ -109,7 +109,8 @@ interface DashboardProps {
     habitId: string;
     goal: number;
   };
-  setEditingGoal: (v: null) => void;
+ setEditingGoal: (v: { habitId: string; goal: number } | null) => void;
+
   setEditingLog: React.Dispatch<React.SetStateAction<DailyLog | null>>;
 }
 interface LandingProps {
