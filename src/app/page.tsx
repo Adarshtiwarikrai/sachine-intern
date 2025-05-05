@@ -110,6 +110,7 @@ interface DashboardProps {
     goal: number;
   };
   setEditingGoal: (v: null) => void;
+  setEditingLog: React.Dispatch<React.SetStateAction<DailyLog | null>>;
 }
 interface LandingProps {
   onStart: () => void;
@@ -407,6 +408,7 @@ export default function HabitFlow() {
             setLogDetailsOpen={setLogDetailsOpen}
             editingGoal={editingGoal}
             setEditingGoal={setEditingGoal}
+            setEditingLog={setEditingLog}
           />
         )}
 
@@ -849,6 +851,7 @@ function Dashboard({
   setLogDetailsOpen,
   editingGoal,
   setEditingGoal,
+  setEditingLog
 }: DashboardProps) {
   const [floatingShapes] = useState(() =>
     Array.from({ length: 15 }, () => ({
