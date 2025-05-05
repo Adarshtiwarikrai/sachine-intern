@@ -88,7 +88,29 @@ interface NavProps {
   emailReminderEnabled: boolean;
   setEmailReminderEnabled: (enabled: boolean | ((prev: boolean) => boolean)) => void;
 }
-
+interface DashboardProps {
+  dark: boolean;
+  habits: Habit[];
+  updateSlider: (hid: string, v: number) => void;
+  changeChart: (hid: string, t: "line" | "bar" | "pie") => void;
+  openDayModal: (day: { hid: string; day: string; val: number }) => void;
+  getNextEditableDay: (habit: Habit) => string | null;
+  currentDayIndex: number;
+  setHabits: React.Dispatch<React.SetStateAction<Habit[]>>;
+  toast: (msg: string) => void;
+  setPastWeeks: React.Dispatch<React.SetStateAction<Record<string, DayEntry[][]>>>;
+  setDayOpen: React.Dispatch<React.SetStateAction<null | {
+    hid: string;
+    day: string;
+    val: number;
+  }>>;
+  setLogDetailsOpen: React.Dispatch<React.SetStateAction<null | string>>;
+  editingGoal: null | {
+    habitId: string;
+    goal: number;
+  };
+  setEditingGoal: (v: null) => void;
+}
 interface LandingProps {
   onStart: () => void;
 }
