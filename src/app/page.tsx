@@ -1101,7 +1101,7 @@ function Dashboard({
                                   ...weeks,
                                   [hh.id]: [
                                     ...(weeks[hh.id] || []),
-                                    hh.history.map((entry) => ({ ...entry })),
+                                    hh.history.map((entry,idx) => ({ id: `${hh.id}-${idx}`,...entry })),
                                   ],
                                 }));
                                 return {
