@@ -380,6 +380,7 @@ export default function HabitFlow() {
             : "from-slate-50 via-gray-50 to-white text-gray-900"
         }`}
       >
+      {view === "dashboard" && (
         <Nav
           dark={dark}
           setDark={setDark}
@@ -390,7 +391,7 @@ export default function HabitFlow() {
           emailReminderEnabled={emailReminderEnabled}
           setEmailReminderEnabled={setEmailReminderEnabled}
         />
-
+      )}
         {view === "landing" ? (
           <Landing onStart={() => setView("dashboard")} />
         ) : (
@@ -601,33 +602,60 @@ function Nav({
 }
 
 function Landing({ onStart }: LandingProps) {
+  const [dark, setDark] = useState(true);
   const [particles] = useState(() =>
     Array.from({ length: 40 }, () => ({
       size: Math.random() * 8 + 4,
       left: `${Math.random() * 100}%`,
       top: `${Math.random() * 100}%`,
-      color: ["bg-indigo-400/80", "bg-pink-400/80", "bg-purple-400/80"][
-        Math.floor(Math.random() * 3)
-      ],
+      color: dark
+        ? ["bg-indigo-400/80", "bg-pink-400/80", "bg-purple-400/80"][
+            Math.floor(Math.random() * 3)
+          ]
+        : ["bg-indigo-500/70", "bg-pink-500/70", "bg-purple-500/70"][
+            Math.floor(Math.random() * 3)
+          ],
     }))
   );
 
   return (
-    <section className="relative min-h-screen flex flex-col items-center justify-center text-center px-6 overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50 to-pink-50 dark:from-slate-900 dark:via-gray-900 dark:to-black">
+    <section
+      className={`relative min-h-screen flex flex-col items-center justify-center text-center px-6 overflow-hidden
+        ${
+          dark
+            ? "bg-gradient-to-br from-slate-50 via-blue-50 to-pink-50 dark:from-slate-900 dark:via-gray-900 dark:to-black"
+            : "bg-gradient-to-br from-white via-blue-50 to-pink-50"
+        }
+      `}
+    >
+      {/* Theme toggle button */}
+      <nav className="absolute top-4 right-4 z-20">
+        <button
+          onClick={() => setDark(!dark)}
+          className={`p-2 rounded-full shadow-md focus:outline-none
+            ${dark ? "bg-gray-800 text-white" : "bg-white text-gray-800"}
+          `}
+        >
+          {dark ? "🌞 Light Mode" : "🌙 Dark Mode"}
+        </button>
+      </nav>
+
       {/* Animated sun/moon burst */}
       <motion.div
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
         transition={{ duration: 1 }}
-        className="absolute w-[600px] h-[600px] opacity-10 dark:opacity-5"
-        style={{
-          background: `radial-gradient(circle, currentColor 0%, transparent 70%)`,
-        }}
+        className={`absolute w-[600px] h-[600px] opacity-10
+          ${dark ? "dark:opacity-5 text-white" : "opacity-20 text-indigo-200"}
+        `}
+        style={{ background: `radial-gradient(circle, currentColor 0%, transparent 70%)` }}
       />
 
-      {/* Floating cards animation */}
+      {/* Floating cards */}
       <motion.div
-        className="absolute w-48 h-64 bg-white/90 backdrop-blur-lg rounded-2xl shadow-xl -left-20 top-1/4"
+        className={`absolute w-48 h-64 backdrop-blur-lg rounded-2xl shadow-xl -left-20 top-1/4
+          ${dark ? "bg-white/90" : "bg-white/95 border border-indigo-100"}
+        `}
         initial={{ y: -20, rotate: -5 }}
         animate={{ y: [0, -40, 0], rotate: [-5, 5, -5] }}
         transition={{ duration: 8, repeat: Infinity }}
@@ -643,25 +671,10 @@ function Landing({ onStart }: LandingProps) {
       {particles.map((p, i) => (
         <motion.div
           key={i}
-          className={`absolute rounded-full ${p.color} shadow-sm`}
-          style={{
-            width: `${p.size}px`,
-            height: `${p.size}px`,
-            left: p.left,
-            top: p.top,
-          }}
-          animate={{
-            y: [0, -100, 0],
-            x: [0, 50, 0],
-            scale: [1, 1.4, 1],
-            opacity: [0.8, 1, 0.8],
-          }}
-          transition={{
-            duration: 6 + i,
-            delay: Math.random() * 2,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
+          className={`absolute rounded-full ${p.color} shadow-md`}
+          style={{ width: `${p.size}px`, height: `${p.size}px`, left: p.left, top: p.top }}
+          animate={{ y: [0, -100, 0], x: [0, 50, 0], scale: [1, 1.4, 1], opacity: [0.8, 1, 0.8] }}
+          transition={{ duration: 6 + i, delay: Math.random() * 2, repeat: Infinity, ease: "easeInOut" }}
         />
       ))}
 
@@ -672,7 +685,15 @@ function Landing({ onStart }: LandingProps) {
         transition={{ duration: 0.8 }}
         className="relative z-10 max-w-3xl"
       >
-        <h1 className="text-5xl md:text-6xl font-extrabold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 dark:from-indigo-400 dark:via-purple-400 dark:to-pink-400 bg-clip-text text-transparent mb-6 relative">
+        <h1
+          className={`text-5xl md:text-6xl font-extrabold mb-6 bg-clip-text text-transparent
+            ${
+              dark
+                ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600"
+                : "bg-gradient-to-r from-indigo-700 via-purple-700 to-pink-700"
+            }
+          `}
+        >
           Build Better Habits
           <motion.span
             className="absolute -top-8 -left-12 text-4xl"
@@ -694,63 +715,37 @@ function Landing({ onStart }: LandingProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
-          className="text-lg md:text-2xl text-slate-600 dark:text-gray-300 mb-12 font-medium space-y-2"
+          className={`text-lg md:text-2xl mb-12 font-medium space-y-2
+            ${dark ? "text-slate-600" : "text-slate-700"}
+          `}
         >
-          <span className="inline-block bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 bg-clip-text text-transparent">
+          <span className="inline-block bg-clip-text text-transparent font-semibold bg-gradient-to-r from-blue-600 to-purple-600">
             Track progress
-          </span>{" "}
+          </span>
           <span className="mx-2">•</span>
-          <span className="inline-block bg-gradient-to-r from-purple-600 to-pink-600 dark:from-purple-400 dark:to-pink-400 bg-clip-text text-transparent">
+          <span className="inline-block bg-clip-text text-transparent font-semibold bg-gradient-to-r from-purple-600 to-pink-600">
             Analyze patterns
-          </span>{" "}
+          </span>
           <span className="mx-2">•</span>
-          <span className="inline-block bg-gradient-to-r from-pink-600 to-red-600 dark:from-pink-400 dark:to-red-400 bg-clip-text text-transparent">
+          <span className="inline-block bg-clip-text text-transparent font-semibold bg-gradient-to-r from-pink-600 to-red-600">
             Achieve goals
           </span>
         </motion.p>
 
-        {/* Premium CTA button */}
         <motion.button
           onClick={onStart}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           className="relative px-8 py-4 rounded-[2rem] bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-2xl text-lg font-semibold text-white overflow-hidden group"
         >
-          <span className="relative z-10 flex items-center gap-2">
-            Get Started
-            <motion.span
-              animate={{ x: [0, 8, 0] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 7l5 5m0 0l-5 5m5-5H6"
-                />
-              </svg>
-            </motion.span>
-          </span>
-          <div className="absolute inset-0 bg-[length:200%_auto] animate-gradient-shine bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-40" />
-          <div className="absolute inset-0 border-2 border-white/20 rounded-[2rem] group-hover:border-white/40 transition-all" />
+          <span className="relative z-10 flex items-center gap-2">Get Started</span>
         </motion.button>
       </motion.div>
 
       {/* Animated grid lines */}
       <div className="absolute inset-0 opacity-20 dark:opacity-[0.03] pointer-events-none">
         <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <pattern
-            id="grid-pattern"
-            width="60"
-            height="60"
-            patternUnits="userSpaceOnUse"
-          >
+          <pattern id="grid-pattern" width="60" height="60" patternUnits="userSpaceOnUse">
             <path
               d="M 60 0 L 0 0 0 60"
               fill="none"
