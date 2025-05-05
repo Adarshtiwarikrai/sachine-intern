@@ -86,7 +86,7 @@ interface NavProps {
   setAddOpen: (open: boolean) => void;
   setSummaryOpen: (open: boolean) => void;
   emailReminderEnabled: boolean;
-  setEmailReminderEnabled: (enabled: boolean) => void;
+  setEmailReminderEnabled: (enabled: boolean | ((prev: boolean) => boolean)) => void;
 }
 
 interface LandingProps {
@@ -536,9 +536,10 @@ function Nav({
                 <motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
-                  onClick={() =>
-                    setEmailReminderEnabled((prev: boolean) => !prev)
-                  }
+                  onClick={() => {
+                    const newValue = !emailReminderEnabled;
+                    setEmailReminderEnabled(newValue);
+                  }}
                   className={`p-2 rounded-lg ${
                     emailReminderEnabled
                       ? "bg-yellow-500 hover:bg-yellow-600"
