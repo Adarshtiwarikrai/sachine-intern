@@ -23,7 +23,12 @@ import {
   PolarRadiusAxis,
 } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
-
+interface NewHabitInput {
+  name: string;
+  unit: string;
+  goal: number;
+  healthyIfLess: boolean;
+}
 
 interface DayEntry {
   id: string;
@@ -37,9 +42,11 @@ interface Habit {
   goal: number;
   current: number;
   streak: number;
+  maxStreak: number;
   history: DayEntry[];
   chartType: "line" | "bar" | "pie";
   logs: DailyLog[];
+  healthyIfLess?: boolean;
 }
 interface DailyLog {
   id: string;
@@ -52,6 +59,7 @@ interface DailyLog {
 }
 
 interface SummaryModalProps {
+  dark: boolean;           
   habits: Habit[];
   pastWeeks: Record<string, DayEntry[][]>;
   onClose: () => void;
@@ -86,7 +94,9 @@ interface NavProps {
   setAddOpen: (open: boolean) => void;
   setSummaryOpen: (open: boolean) => void;
   emailReminderEnabled: boolean;
-  setEmailReminderEnabled: (enabled: boolean | ((prev: boolean) => boolean)) => void;
+  setEmailReminderEnabled: (
+    enabled: boolean | ((prev: boolean) => boolean)
+  ) => void;
 }
 interface DashboardProps {
   dark: boolean;
@@ -98,18 +108,22 @@ interface DashboardProps {
   currentDayIndex: number;
   setHabits: React.Dispatch<React.SetStateAction<Habit[]>>;
   toast: (msg: string) => void;
-  setPastWeeks: React.Dispatch<React.SetStateAction<Record<string, DayEntry[][]>>>;
-  setDayOpen: React.Dispatch<React.SetStateAction<null | {
-    hid: string;
-    day: string;
-    val: number;
-  }>>;
+  setPastWeeks: React.Dispatch<
+    React.SetStateAction<Record<string, DayEntry[][]>>
+  >;
+  setDayOpen: React.Dispatch<
+    React.SetStateAction<null | {
+      hid: string;
+      day: string;
+      val: number;
+    }>
+  >;
   setLogDetailsOpen: React.Dispatch<React.SetStateAction<null | string>>;
   editingGoal: null | {
     habitId: string;
     goal: number;
   };
- setEditingGoal: (v: { habitId: string; goal: number } | null) => void;
+  setEditingGoal: (v: { habitId: string; goal: number } | null) => void;
 
   setEditingLog: React.Dispatch<React.SetStateAction<DailyLog | null>>;
 }
@@ -118,12 +132,14 @@ interface LandingProps {
 }
 interface AddHabitModalProps {
   dark: boolean;
-  newHabit: { name: string; unit: string; goal: number };
-  setNewHabit: React.Dispatch<React.SetStateAction<{ name: string; unit: string; goal: number }>>;
+  newHabit: NewHabitInput;
+  setNewHabit: React.Dispatch<React.SetStateAction<NewHabitInput>>;
   onClose: () => void;
   onCreate: () => void;
 }
 const WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+const getDayIndex = (day: string) => WEEK.findIndex((d) => d === day);
+
 const COLORS = [
   "#4f46e5",
   "#10b981",
@@ -134,20 +150,296 @@ const COLORS = [
   "#8b5cf6",
 ];
 
-
-  const today = () => ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()];
+const today = () =>
+  ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date().getDay()];
 const generateId = () => Math.random().toString(36).substring(2, 11); // 9-character random ID
-const emptyWeek = () => WEEK.map((d) => ({ id: generateId(), day: d, value: 0 }));
+const emptyWeek = () =>
+  WEEK.map((d) => ({ id: generateId(), day: d, value: 0 }));
 const sortByWeek = (a: DayEntry, b: DayEntry): number => {
-  const dayA = a.day as typeof WEEK[number];
-  const dayB = b.day as typeof WEEK[number];
+  const dayA = a.day as (typeof WEEK)[number];
+  const dayB = b.day as (typeof WEEK)[number];
   return WEEK.indexOf(dayA) - WEEK.indexOf(dayB);
 };
+// ────────────────────────────────────────────────────────────────────
+// ─────────── STREAK HELPERS ───────────
+
+// 1️⃣  Does today’s value count toward the streak?
+ const meetsGoal = (
+  value: number,
+  goal: number,
+  healthyIfLess: boolean
+): boolean => {
+  if (healthyIfLess) {
+    // “0” means “no data yet,” not a successful ≤-goal day
+    if (value === 0) return false;
+    return value <= goal;
+  } else {
+    // for “healthy if more” habits, zero always fails
+    if (value === 0 && goal > 0) return false;
+    return value >= goal;
+  }
+};
+
+// 2️⃣  Fast lookup table so we don’t .find() every loop
+const dayValueMap = (history: DayEntry[]) => {
+  console.log(history.map((h) => console.log(h.day, h.value)));
+  return new Map(history.map((h) => [h.day, h.value]));
+};
+
+/**
+ * 3️⃣  Count consecutive *good* days, walking backwards from today.
+ *      • Healthy-If-Less  (e.g. “screen time ≤ 4 h”) → good when value ≤ goal
+ *      • Healthy-If-More  (e.g. “water ≥ 2 000 ml”) → good when value ≥ goal
+ *      Any miss (value === 0 or fails rule) resets the streak.
+ */
+ function calculateMaxStreak(
+  history: DayEntry[],
+  goal: number,
+  healthyIfLess: boolean
+): number {
+  const values = dayValueMap(history);
+  let maxRun = 0;
+  let currentRun = 0;
+
+  // Walk forwards through the week
+  for (let i = 0; i < WEEK.length; i++) {
+    const dayName = WEEK[i];
+    const val = values.get(dayName) ?? 0;
+
+    if (meetsGoal(val, goal, healthyIfLess)) {
+      currentRun++;
+      maxRun = Math.max(maxRun, currentRun);
+    } else {
+      currentRun = 0;
+    }
+  }
+
+  return maxRun;
+}
+
+function calculateStreak(
+  history: DayEntry[],
+  goal: number,
+  healthyIfLess: boolean,
+  entryIndex: number
+): number {
+  const values = dayValueMap(history);
+  let streak = 0;
+
+  // 🔄 1)  BACKWARDS loop chalayen (today → Monday)
+  for (let i = entryIndex; i >= 0; i--) {
+    const dayName = WEEK[i];
+    const value = values.get(dayName) ?? 0;
+
+    // 🔄 2)  Fail  milte hi **break** kar dein, reset mat kijiye
+    if (!meetsGoal(value, goal, healthyIfLess)) break;
+
+    streak++; // good day ⇒ streak badhāo
+  }
+
+  return streak;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Water Intake logs (habitId = "h1")
+const WATER_LOGS: DailyLog[] = [
+  {
+    id: "h1-log-1",
+    habitId: "h1",
+    date: "2025-05-05T20:00:00.000Z",
+    day: "Mon",
+    value: 1800,
+    notes: "Had 500 ml before & after workout",
+    timestamp: 1714968000000,
+  },
+  {
+    id: "h1-log-2",
+    habitId: "h1",
+    date: "2025-05-06T20:00:00.000Z",
+    day: "Tue",
+    value: 2000,
+    notes: "Felt great—hit my target",
+    timestamp: 1715054400000,
+  },
+  {
+    id: "h1-log-3",
+    habitId: "h1",
+    date: "2025-05-07T20:00:00.000Z",
+    day: "Wed",
+    value: 1900,
+    notes: "Missed one glass at lunch",
+    timestamp: 1715140800000,
+  },
+  {
+    id: "h1-log-4",
+    habitId: "h1",
+    date: "2025-05-08T20:00:00.000Z",
+    day: "Thu",
+    value: 2100,
+    notes: "Drank extra on a hot day",
+    timestamp: 1715227200000,
+  },
+  {
+    id: "h1-log-5",
+    habitId: "h1",
+    date: "2025-05-09T20:00:00.000Z",
+    day: "Fri",
+    value: 2000,
+    notes: "On point",
+    timestamp: 1715313600000,
+  },
+  {
+    id: "h1-log-6",
+    habitId: "h1",
+    date: "2025-05-10T20:00:00.000Z",
+    day: "Sat",
+    value: 1600,
+    notes: "Busy day, forgot a couple glasses",
+    timestamp: 1715400000000,
+  },
+  {
+    id: "h1-log-7",
+    habitId: "h1",
+    date: "2025-05-11T20:00:00.000Z",
+    day: "Sun",
+    value: 750,
+    notes: "Lazy Sunday—need to drink more!",
+    timestamp: 1715486400000,
+  },
+];
+
+// Screen Time logs (habitId = "h2")
+const SCREEN_LOGS: DailyLog[] = [
+  {
+    id: "h2-log-1",
+    habitId: "h2",
+    date: "2025-05-05T22:00:00.000Z",
+    day: "Mon",
+    value: 3,
+    notes: "Watched Netflix",
+    timestamp: 1714975200000,
+  },
+  {
+    id: "h2-log-2",
+    habitId: "h2",
+    date: "2025-05-06T22:30:00.000Z",
+    day: "Tue",
+    value: 4,
+    notes: "Work + gaming",
+    timestamp: 1715062200000,
+  },
+  {
+    id: "h2-log-3",
+    habitId: "h2",
+    date: "2025-05-07T21:00:00.000Z",
+    day: "Wed",
+    value: 2,
+    notes: "Only did evening scroll",
+    timestamp: 1715149200000,
+  },
+  {
+    id: "h2-log-4",
+    habitId: "h2",
+    date: "2025-05-08T23:00:00.000Z",
+    day: "Thu",
+    value: 5,
+    notes: "Binge-watched a new series",
+    timestamp: 1715235600000,
+  },
+  {
+    id: "h2-log-5",
+    habitId: "h2",
+    date: "2025-05-09T21:30:00.000Z",
+    day: "Fri",
+    value: 4,
+    notes: "Mixed work & fun",
+    timestamp: 1715321400000,
+  },
+  {
+    id: "h2-log-6",
+    habitId: "h2",
+    date: "2025-05-10T20:30:00.000Z",
+    day: "Sat",
+    value: 1,
+    notes: "Only 1 hr scrolling",
+    timestamp: 1715409000000,
+  },
+  {
+    id: "h2-log-7",
+    habitId: "h2",
+    date: "2025-05-11T21:00:00.000Z",
+    day: "Sun",
+    value: 3,
+    notes: "Video call + social media",
+    timestamp: 1715494800000,
+  },
+];
+
+const MOCK_HABITS: Habit[] = [
+  {
+    id: "h1",
+    name: "Water Intake",
+    unit: "ml",
+    goal: 2000,
+    current: 1800,
+    healthyIfLess: false,
+    streak: 5,
+    maxStreak: 5,
+    history: [
+      { id: "h1-1", day: "Mon", value: 1800 },
+      { id: "h1-2", day: "Tue", value: 2000 },
+      { id: "h1-3", day: "Wed", value: 1900 },
+      { id: "h1-4", day: "Thu", value: 2100 },
+      { id: "h1-5", day: "Fri", value: 2000 },
+      { id: "h1-6", day: "Sat", value: 1600 },
+      { id: "h1-7", day: "Sun", value: 750 },
+    ],
+    chartType: "bar",
+    logs: WATER_LOGS,
+  },
+  {
+    id: "h2",
+    name: "Screen Time",
+    unit: "hours",
+    goal: 4,
+    current: 3,
+    streak: 2,
+    maxStreak: 5,
+    healthyIfLess: true,
+    history: [
+      { id: "h2-1", day: "Mon", value: 3 },
+      { id: "h2-2", day: "Tue", value: 4 },
+      { id: "h2-3", day: "Wed", value: 2 },
+      { id: "h2-4", day: "Thu", value: 5 },
+      { id: "h2-5", day: "Fri", value: 4 },
+      { id: "h2-6", day: "Sat", value: 1 },
+      { id: "h2-7", day: "Sun", value: 3 },
+    ],
+    chartType: "line",
+    logs: SCREEN_LOGS,
+  },
+];
 
 export default function HabitFlow() {
   const [dark, setDark] = useState(true);
   const [view, setView] = useState<"landing" | "dashboard">("landing");
-  const [habits, setHabits] = useState<Habit[]>([]);
+  const [habits, setHabits] = useState<Habit[]>(() =>
+    MOCK_HABITS.map(h => {
+      // 1) find the last day they logged >0
+      const filled = h.history.filter(d => d.value > 0);
+      const lastDay = filled.length > 0 ? filled[filled.length-1].day : today();
+      const entryIndex = getDayIndex(lastDay);
+  
+      return {
+        ...h,
+        // 2) calculate both streaks using that index
+        streak: calculateStreak(h.history, h.goal, !!h.healthyIfLess, entryIndex),
+        maxStreak: calculateMaxStreak(h.history, h.goal, !!h.healthyIfLess),
+      };
+    })
+  );
+  
+
   const [toasts, setToasts] = useState<string[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [logDetailsOpen, setLogDetailsOpen] = useState<null | string>(null);
@@ -156,9 +448,8 @@ export default function HabitFlow() {
     habitId: string;
     goal: number;
   }>(null);
-  const [emailReminderEnabled, setEmailReminderEnabled] = useState<boolean>(false);
-
-  
+  const [emailReminderEnabled, setEmailReminderEnabled] =
+    useState<boolean>(false);
 
   const handleViewLogs = (habitId: string) => {
     setLogDetailsOpen(habitId);
@@ -168,10 +459,11 @@ export default function HabitFlow() {
     setEditingLog(log);
   };
 
-  const [newHabit, setNewHabit] = useState({
+  const [newHabit, setNewHabit] = useState<NewHabitInput>({
     name: "",
     unit: "hours",
     goal: 8,
+    healthyIfLess: false, // ← default
   });
   const [dayOpen, setDayOpen] = useState<null | {
     hid: string;
@@ -199,73 +491,134 @@ export default function HabitFlow() {
     notes: string;
   }) => {
     if (!logModalOpen) return;
+    const { habitId, day, value, notes } = { ...logModalOpen, ...log };
 
-    const habit = habits.find((h) => h.id === logModalOpen.habitId);
-    if (!habit) return;
-    const normalizedDay = WEEK.find((d) => log.day.startsWith(d)) || log.day;
+    setHabits((prev) =>
+      prev.map((h) => {
+        if (h.id !== habitId) return h;
 
-    const newLog: DailyLog = {
-      id: generateId(),
-      habitId: habit.id,
-      date: new Date().toISOString(),
-      day: log.day,
-      value: log.value,
-      notes: log.notes,
+        const newHistory = h.history.map((d) =>
+          d.day === day ? { ...d, value } : d
+        );
+        const entryIndex = getDayIndex(day);
+        const newMax = calculateMaxStreak(
+          newHistory,
+          h.goal,
+          !!h.healthyIfLess
+        );
+        const newStreak = calculateStreak(
+          newHistory,
+          h.goal,
+          !!h.healthyIfLess,
+          entryIndex
+        );
+        console.log(
+          h.name,
+          newHistory.map((d) => `${d.day}:${d.value}`),
+          "streak→",
+          newStreak
+        );
+
+        return {
+          ...h,
+          history: newHistory,
+          streak: newStreak,
+          maxStreak: newMax,
+          logs: [
+            ...h.logs,
+            {
+              id: generateId(),
+              habitId,
+              date: new Date().toISOString(),
+              day,
+              value,
+              notes,
+              timestamp: Date.now(),
+            },
+          ],
+        };
+      })
+    );
+
+    toast("📝 Log saved successfully");
+    setLogModalOpen(null);
+  };
+
+  const handleUpdateGoal = (habitId: string, newGoal: number) => {
+    setHabits((prev) =>
+      prev.map((h) => {
+        if (h.id !== habitId) return h;
+  
+        // recalc streak & maxStreak with the new goal
+        const newStreak = calculateStreak(
+          h.history,
+          newGoal,
+          !!h.healthyIfLess,
+          currentDayIndex
+        );
+        const newMax = calculateMaxStreak(
+          h.history,
+          newGoal,
+          !!h.healthyIfLess
+        );
+  
+        return {
+          ...h,
+          goal: newGoal,
+          streak: newStreak,
+          maxStreak: newMax,
+        };
+      })
+    );
+    toast("🎯 Goal updated successfully");
+  };
+  
+
+  const handleUpdateLog = (updates: {
+    day: string;
+    value: number;
+    notes: string;
+  }) => {
+    if (!editingLog) return;
+
+    const updatedLog: DailyLog = {
+      ...editingLog,
+      day: updates.day,
+      value: updates.value,
+      notes: updates.notes,
       timestamp: Date.now(),
     };
 
     setHabits((prev) =>
-      prev.map((h) =>
-        h.id === habit.id
-          ? {
-              ...h,
-              logs: [...h.logs, newLog],
-              history: h.history.map((d) =>
-                d.day === log.day ? { ...d, value: log.value } : d
-              ),
-            }
-          : h
-      )
+      prev.map((h) => {
+        if (h.id !== updatedLog.habitId) return h;
+
+        const newHistory = h.history.map((d) =>
+          d.day === updatedLog.day ? { ...d, value: updatedLog.value } : d
+        );
+        const entryIndex = getDayIndex(updatedLog.day);
+        const newMax = calculateMaxStreak(
+          newHistory,
+          h.goal,
+          !!h.healthyIfLess
+        );
+        const newStreak = calculateStreak(
+          newHistory,
+          h.goal,
+          !!h.healthyIfLess,
+          entryIndex
+        );
+
+        return {
+          ...h,
+          history: newHistory,
+          streak: newStreak,
+          maxStreak: newMax,
+          logs: h.logs.map((l) => (l.id === updatedLog.id ? updatedLog : l)),
+        };
+      })
     );
 
-    toast("📝 Log saved successfully");
-    setLogModalOpen(null); // ✅ keep this here
-  };
-  const handleUpdateGoal = (habitId: string, newGoal: number) => {
-    setHabits((prev) =>
-      prev.map((h) => (h.id === habitId ? { ...h, goal: newGoal } : h))
-    );
-    toast("🎯 Goal updated successfully");
-  };
-
-  const handleUpdateLog = (log: { day: string; value: number; notes: string }) => {
-    if (!editingLog) return;
-  
-    const updatedLog: DailyLog = {
-      ...editingLog,
-      day: log.day,
-      value: log.value,
-      notes: log.notes,
-      // timestamp can be updated to now if needed
-      timestamp: Date.now()
-    };
-  
-    setHabits((prev) =>
-      prev.map((h) =>
-        h.id === updatedLog.habitId
-          ? {
-              ...h,
-              logs: h.logs.map((l) =>
-                l.id === updatedLog.id ? updatedLog : l
-              ),
-              history: h.history.map((d) =>
-                d.day === updatedLog.day ? { ...d, value: updatedLog.value } : d
-              ),
-            }
-          : h
-      )
-    );
-  
     toast("📝 Log updated successfully");
     setEditingLog(null);
   };
@@ -280,6 +633,29 @@ export default function HabitFlow() {
     const dayIndex = WEEK.findIndex((day) => day === todayName);
     setCurrentDayIndex(dayIndex >= 0 ? dayIndex : 0);
   }, []);
+ /* eslint-disable react-hooks/exhaustive-deps */
+  useEffect(() => {
+    // only recalc once the user has interacted
+    if (habits.some(h => h.logs.length > 0)) {
+      setHabits(prev =>
+        prev.map(h => ({
+          ...h,
+          streak: calculateStreak(
+            h.history,
+            h.goal,
+            !!h.healthyIfLess,
+            currentDayIndex
+          ),
+          maxStreak: calculateMaxStreak(
+            h.history,
+            h.goal,
+            !!h.healthyIfLess
+          ),
+        }))
+      );
+    }
+  }, [currentDayIndex]);
+  
 
   const toast = useCallback((msg: string) => {
     setToasts((p) => [msg, ...p.slice(0, 2)]);
@@ -288,53 +664,90 @@ export default function HabitFlow() {
 
   const createHabit = () => {
     if (!newHabit.name.trim()) return;
-    setHabits((h) => [
-      ...h,
+
+    // 1. initialize empty week
+    const initialHistory = emptyWeek();
+
+    // 2. compute its very first streak
+    const initialStreak = calculateStreak(
+      initialHistory,
+      newHabit.goal,
+      newHabit.healthyIfLess,
+      currentDayIndex
+    );
+
+    // 3. add the new habit
+    setHabits((prev) => [
+      ...prev,
       {
         id: generateId(),
         name: newHabit.name.trim(),
         unit: newHabit.unit,
         goal: newHabit.goal,
         current: 0,
-        streak: 0,
-        history: emptyWeek(),
+        streak: initialStreak,
+        maxStreak: initialStreak,
+        history: initialHistory,
         chartType: "line",
         logs: [],
+        healthyIfLess: newHabit.healthyIfLess,
       },
     ]);
+
     toast(`✅ "${newHabit.name.trim()}" added`);
     setAddOpen(false);
-    setNewHabit({ name: "", unit: "hours", goal: 8 });
+    setNewHabit({ name: "", unit: "hours", goal: 8, healthyIfLess: false });
   };
 
   const saveDay = (hid: string, day: string, val: number) => {
-    const timestamp = Date.now();
-    const date = new Date().toISOString();
-    const newLog: DailyLog = {
-      id: generateId(),
-      habitId: hid,
-      date,
-      day,
-      value: val,
-      notes: "",
-      timestamp,
-    };
-
+    const todayName = today();
     setHabits((prev) =>
-      prev.map((h) =>
-        h.id === hid
-          ? {
-              ...h,
-              history: [
-                ...h.history.filter((d) => d.day !== day),
-                { id: generateId(), day, value: val },
-              ].sort(sortByWeek),
-              current: day === today() ? val : h.current,
-              logs: [...h.logs, newLog],
-            }
-          : h
-      )
+      prev.map((h) => {
+        if (h.id !== hid) return h;
+
+        // 1) updated history
+        const newHistory = [
+          ...h.history.filter((d) => d.day !== day),
+          { id: generateId(), day, value: val },
+        ].sort(sortByWeek);
+
+        // 2) recalc streak
+        const entryIndex = getDayIndex(day);
+        const newMax = calculateMaxStreak(
+          newHistory,
+          h.goal,
+          !!h.healthyIfLess
+        );
+        const newStreak = calculateStreak(
+          newHistory,
+          h.goal,
+          !!h.healthyIfLess,
+          entryIndex
+        );
+
+        // 3) return updated habit
+        return {
+          ...h,
+          history: newHistory,
+          streak: newStreak,
+          maxStreak: newMax,
+          current: day === todayName ? val : h.current,
+          logs: [
+            ...h.logs,
+            {
+              id: generateId(),
+              habitId: hid,
+              date: new Date().toISOString(),
+              day,
+              value: val,
+              notes: "",
+              timestamp: Date.now(),
+            },
+          ],
+        };
+      })
     );
+
     toast(`📝 ${day} saved`);
     setDayOpen(null);
   };
@@ -342,20 +755,40 @@ export default function HabitFlow() {
   const updateSlider = (hid: string, v: number) => {
     const todayName = today();
     setHabits((prev) =>
-      prev.map((h) =>
-        h.id === hid
-          ? {
-              ...h,
-              current: v,
-              history: h.history.map((d) =>
-                d.day === todayName ? { ...d, value: v } : d
-              ),
-            }
-          : h
-      )
+      prev.map((h) => {
+        if (h.id !== hid) return h;
+  
+        // 1) overwrite today's entry
+        const newHistory = h.history.map((d) =>
+          d.day === todayName ? { ...d, value: v } : d
+        );
+  
+        // 2) recalc both streak & maxStreak
+        const newStreak = calculateStreak(
+          newHistory,
+          h.goal,
+          !!h.healthyIfLess,
+          currentDayIndex
+        );
+        const newMax = calculateMaxStreak(
+          newHistory,
+          h.goal,
+          !!h.healthyIfLess
+        );
+  
+        return {
+          ...h,
+          history: newHistory,
+          streak: newStreak,
+          maxStreak: newMax,
+          current: v,
+        };
+      })
     );
+  
     toast("📝 Today's value updated");
   };
+  
 
   const changeChart = (hid: string, t: "line" | "bar" | "pie") =>
     setHabits((p) => p.map((h) => (h.id === hid ? { ...h, chartType: t } : h)));
@@ -380,18 +813,18 @@ export default function HabitFlow() {
             : "from-slate-50 via-gray-50 to-white text-gray-900"
         }`}
       >
-      {view === "dashboard" && (
-        <Nav
-          dark={dark}
-          setDark={setDark}
-          view={view}
-          setView={setView}
-          setAddOpen={setAddOpen}
-          setSummaryOpen={setSummaryOpen}
-          emailReminderEnabled={emailReminderEnabled}
-          setEmailReminderEnabled={setEmailReminderEnabled}
-        />
-      )}
+        {view === "dashboard" && (
+          <Nav
+            dark={dark}
+            setDark={setDark}
+            view={view}
+            setView={setView}
+            setAddOpen={setAddOpen}
+            setSummaryOpen={setSummaryOpen}
+            emailReminderEnabled={emailReminderEnabled}
+            setEmailReminderEnabled={setEmailReminderEnabled}
+          />
+        )}
         {view === "landing" ? (
           <Landing onStart={() => setView("dashboard")} />
         ) : (
@@ -434,6 +867,7 @@ export default function HabitFlow() {
         )}
         {summaryOpen && (
           <SummaryModal
+            dark={dark}                
             habits={habits}
             pastWeeks={pastWeeks}
             onClose={() => setSummaryOpen(false)}
@@ -506,7 +940,7 @@ function Nav({
   setSummaryOpen,
   emailReminderEnabled,
   setEmailReminderEnabled,
-}:NavProps) {
+}: NavProps) {
   return (
     <motion.nav
       initial={{ y: -50 }}
@@ -648,7 +1082,9 @@ function Landing({ onStart }: LandingProps) {
         className={`absolute w-[600px] h-[600px] opacity-10
           ${dark ? "dark:opacity-5 text-white" : "opacity-20 text-indigo-200"}
         `}
-        style={{ background: `radial-gradient(circle, currentColor 0%, transparent 70%)` }}
+        style={{
+          background: `radial-gradient(circle, currentColor 0%, transparent 70%)`,
+        }}
       />
 
       {/* Floating cards */}
@@ -672,9 +1108,24 @@ function Landing({ onStart }: LandingProps) {
         <motion.div
           key={i}
           className={`absolute rounded-full ${p.color} shadow-md`}
-          style={{ width: `${p.size}px`, height: `${p.size}px`, left: p.left, top: p.top }}
-          animate={{ y: [0, -100, 0], x: [0, 50, 0], scale: [1, 1.4, 1], opacity: [0.8, 1, 0.8] }}
-          transition={{ duration: 6 + i, delay: Math.random() * 2, repeat: Infinity, ease: "easeInOut" }}
+          style={{
+            width: `${p.size}px`,
+            height: `${p.size}px`,
+            left: p.left,
+            top: p.top,
+          }}
+          animate={{
+            y: [0, -100, 0],
+            x: [0, 50, 0],
+            scale: [1, 1.4, 1],
+            opacity: [0.8, 1, 0.8],
+          }}
+          transition={{
+            duration: 6 + i,
+            delay: Math.random() * 2,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
         />
       ))}
 
@@ -738,14 +1189,21 @@ function Landing({ onStart }: LandingProps) {
           whileTap={{ scale: 0.95 }}
           className="relative px-8 py-4 rounded-[2rem] bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-2xl text-lg font-semibold text-white overflow-hidden group"
         >
-          <span className="relative z-10 flex items-center gap-2">Get Started</span>
+          <span className="relative z-10 flex items-center gap-2">
+            Get Started
+          </span>
         </motion.button>
       </motion.div>
 
       {/* Animated grid lines */}
       <div className="absolute inset-0 opacity-20 dark:opacity-[0.03] pointer-events-none">
         <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <pattern id="grid-pattern" width="60" height="60" patternUnits="userSpaceOnUse">
+          <pattern
+            id="grid-pattern"
+            width="60"
+            height="60"
+            patternUnits="userSpaceOnUse"
+          >
             <path
               d="M 60 0 L 0 0 0 60"
               fill="none"
@@ -847,7 +1305,7 @@ function Dashboard({
   setLogDetailsOpen,
   editingGoal,
   setEditingGoal,
-  setEditingLog
+  setEditingLog,
 }: DashboardProps) {
   const [floatingShapes] = useState(() =>
     Array.from({ length: 15 }, () => ({
@@ -999,18 +1457,24 @@ function Dashboard({
               ? h.history
               : WEEKDAYS.map((day) => ({ day, value: 0 }));
 
-          const doneDays = history.filter((d) => d.value > 0).length;
+          // new: only count days that actually meet the goal
+          const doneDays = history.filter((d) =>
+            meetsGoal(d.value, h.goal, h.healthyIfLess ?? false)
+          ).length;
+
           const pct = (doneDays / 7) * 100;
           const nextEditableDay = getNextEditableDay(h);
           const isWeekComplete = history.every((d) => d.value > 0);
           const isCurrentDayEditable = !isWeekComplete && !!nextEditableDay;
           const todayIdx = currentDayIndex;
           const missedDays = history.filter((d) => d.value === 0);
-          const belowTargetDays = history.filter(
-            (d) => d.value > 0 && d.value < h.goal
-          );
-          const successfulDays = history.filter(
-            (d) => d.value >= h.goal
+          const belowTargetDays = h.healthyIfLess
+            ? // for “healthy if less” habits: only values ABOVE goal are bad
+              history.filter((d) => d.value > h.goal)
+            : // for “healthy if more” habits: only positive-but-under-goal are bad
+              history.filter((d) => d.value > 0 && d.value < h.goal);
+          const successfulDays = history.filter((d) =>
+            meetsGoal(d.value, h.goal, h.healthyIfLess ?? false)
           ).length;
           const successRate = Math.round((successfulDays / 7) * 100);
 
@@ -1042,6 +1506,17 @@ function Dashboard({
                   >
                     {h.name}
                   </h3>
+                  <p className="text-sm flex items-center gap-2">
+                     🔥 Streak: :{" "}
+                    <span className="font-semibold">{h.streak}</span>{" "}
+                    <span className="text-xs opacity-75">days</span>{" "}
+                  </p>
+                  
+                  <p className="text-sm flex items-center gap-2 mt-1">
+                     🏆 Max Streak: {" "}
+                    <span className="font-semibold">{h.maxStreak}</span>{" "}
+                    <span className="text-xs opacity-75">days</span>{" "}
+                  </p>
                   <p
                     className={`text-sm ${
                       dark ? "text-gray-400" : "text-gray-600"
@@ -1096,13 +1571,16 @@ function Dashboard({
                                   ...weeks,
                                   [hh.id]: [
                                     ...(weeks[hh.id] || []),
-                                    hh.history.map((entry,idx) => ({   ...entry,id: `${hh.id}-${idx}-${Date.now()}` })),
+                                    hh.history.map((entry, idx) => ({
+                                      ...entry,
+                                      id: `${hh.id}-${idx}-${Date.now()}`,
+                                    })),
                                   ],
                                 }));
                                 return {
                                   ...hh,
-                                  history: WEEKDAYS.map((day,idx) => ({
-                                      id: `${hh.id}-${idx}-${Date.now()}`,
+                                  history: WEEKDAYS.map((day, idx) => ({
+                                    id: `${hh.id}-${idx}-${Date.now()}`,
                                     day,
                                     value: 0,
                                   })),
@@ -1213,7 +1691,6 @@ function Dashboard({
                     : `Awaiting ${nextEditableDay || "next day"}`}
                 </div>
 
-               
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                   {missedDays.length > 0 && (
                     <div className="text-red-500">
@@ -1239,7 +1716,6 @@ function Dashboard({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
               >
-             
                 {chartTypes.map((t) => (
                   <motion.button
                     key={t}
@@ -1407,45 +1883,50 @@ function Dashboard({
               >
                 {history.map((dayEntry, idx) => {
                   const dayChar = dayEntry.day.slice(0, 3);
+                  const val = dayEntry.value;
                   const hasLog = h.logs.some((l) => l.day === dayEntry.day);
-                  const isBelowTarget =
-                    dayEntry.value > 0 && dayEntry.value < h.goal;
+
+                  // Pull in the new flag (default false)
+                  const healthyIfLess = h.healthyIfLess ?? false;
+
+                  // Determine “good” vs “warning” based on that flag
+                  const isGood = healthyIfLess
+                    ? val > 0 && val <= h.goal // for invert habits: any positive ≤ goal is good
+                    : val >= h.goal; // for normal habits: ≥ goal is good
+
+                  const isWarning = healthyIfLess
+                    ? val > h.goal // invert: > goal is bad
+                    : val > 0 && val < h.goal; // normal: between 0 and goal is warning
+
+                  // Build your Tailwind classes
+                  const bgClass = isWarning
+                    ? dark
+                      ? "bg-red-900/30 text-red-400 shadow-red-500/20"
+                      : "bg-red-100 text-red-800 shadow-red-500/10"
+                    : isGood
+                    ? dark
+                      ? "bg-green-900/30 text-green-400 shadow-green-500/20"
+                      : "bg-green-100 text-green-800 shadow-green-500/10"
+                    : idx <= currentDayIndex
+                    ? dark
+                      ? "bg-gray-800/30 text-gray-400 shadow-gray-500/20"
+                      : "bg-gray-100 text-gray-600 shadow-gray-500/10"
+                    : dark
+                    ? "bg-gray-900/20 text-gray-500 shadow-transparent"
+                    : "bg-gray-50 text-gray-400 shadow-transparent";
 
                   return (
                     <motion.div
                       key={idx}
                       whileHover={{ scale: 1.1 }}
-                      className={`text-center p-2 rounded-lg text-sm font-medium transition-all relative ${
-                        isBelowTarget
-                          ? dark
-                            ? "bg-red-900/30 text-red-400 shadow-red-500/20"
-                            : "bg-red-100 text-red-800 shadow-red-500/10"
-                          : dayEntry.value > 0
-                          ? dark
-                            ? "bg-green-900/30 text-green-400 shadow-green-500/20"
-                            : "bg-green-100 text-green-800 shadow-green-500/10"
-                          : idx <= currentDayIndex
-                          ? dark
-                            ? "bg-gray-800/30 text-gray-400 shadow-gray-500/20"
-                            : "bg-gray-100 text-gray-600 shadow-gray-500/10"
-                          : dark
-                          ? "bg-gray-900/20 text-gray-500 shadow-transparent"
-                          : "bg-gray-50 text-gray-400 shadow-transparent"
-                      } shadow-sm`}
-                      onClick={() => {
-                        if (idx <= currentDayIndex) {
-                          openDayModal({
-                            hid: h.id,
-                            day: dayEntry.day,
-                            val: dayEntry.value,
-                          });
-                        }
-                      }}
+                      className={`text-center p-2 rounded-lg text-sm font-medium transition-all relative ${bgClass}`}
+                      onClick={() =>
+                        idx <= currentDayIndex &&
+                        openDayModal({ hid: h.id, day: dayEntry.day, val })
+                      }
                     >
                       <div className="text-xs opacity-75">{dayChar}</div>
-                      <div className="text-base font-bold mt-1">
-                        {dayEntry.value}
-                      </div>
+                      <div className="text-base font-bold mt-1">{val}</div>
                       {hasLog && (
                         <div className="absolute top-1 right-1 text-xs">📝</div>
                       )}
@@ -1474,7 +1955,7 @@ function AddHabitModal({
   setNewHabit,
   onClose,
   onCreate,
-}: AddHabitModalProps ) {
+}: AddHabitModalProps) {
   return (
     <AnimatePresence>
       {/* Enhanced backdrop animation */}
@@ -1524,7 +2005,7 @@ function AddHabitModal({
           </motion.h2>
 
           <div className="space-y-4">
-            {/* Staggered form field animations */}
+            {/* Habit Name */}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{
@@ -1548,6 +2029,7 @@ function AddHabitModal({
               />
             </motion.div>
 
+            {/* Unit Select */}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{
@@ -1574,6 +2056,7 @@ function AddHabitModal({
               </select>
             </motion.div>
 
+            {/* Goal Input */}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{
@@ -1597,12 +2080,45 @@ function AddHabitModal({
               />
             </motion.div>
 
+            {/* ✅ New toggle for “Healthy if Less” */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                transition: { delay: 0.5, duration: 0.3 },
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                id="healthyIfLess"
+                type="checkbox"
+                checked={newHabit.healthyIfLess}
+                onChange={(e) =>
+                  setNewHabit({
+                    ...newHabit,
+                    healthyIfLess: e.target.checked,
+                  })
+                }
+                className="h-5 w-5 rounded border-gray-300 focus:ring-2 focus:ring-indigo-500"
+              />
+              <label
+                htmlFor="healthyIfLess"
+                className={`${
+                  dark ? "text-gray-200" : "text-gray-800"
+                } text-sm`}
+              >
+                Healthy if Less
+              </label>
+            </motion.div>
+
+            {/* Action Buttons */}
             <motion.div
               className="flex gap-3 mt-6"
               initial={{ opacity: 0 }}
               animate={{
                 opacity: 1,
-                transition: { delay: 0.5, duration: 0.3 },
+                transition: { delay: 0.6, duration: 0.3 },
               }}
             >
               <motion.button
@@ -1616,7 +2132,7 @@ function AddHabitModal({
                 <motion.span
                   initial={{ x: -5, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: 0.6 }}
+                  transition={{ delay: 0.7 }}
                 >
                   ➕ Add Habit
                 </motion.span>
@@ -1632,7 +2148,7 @@ function AddHabitModal({
                 <motion.span
                   initial={{ x: -5, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: 0.7 }}
+                  transition={{ delay: 0.8 }}
                 >
                   ✕ Cancel
                 </motion.span>
@@ -1644,6 +2160,9 @@ function AddHabitModal({
     </AnimatePresence>
   );
 }
+/**
+ * Count backwards from today (or last filled day) as long as each day meets the goal.
+ */
 
 function DayModal({ dark, entry, setEntry, onSave }: any) {
   const [value, setValue] = useState<number>(entry.val);
@@ -1768,10 +2287,12 @@ function DayModal({ dark, entry, setEntry, onSave }: any) {
   );
 }
 function SummaryModal({
+  dark,
   habits,
   pastWeeks,
   onClose,
 }: {
+  dark: boolean;           
   habits: Habit[];
   pastWeeks: Record<string, DayEntry[][]>;
   onClose: () => void;
@@ -1781,13 +2302,16 @@ function SummaryModal({
 
   return (
     <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center"
-        onClick={onClose}
-      >
+    <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    onClick={onClose}
+    className={`fixed inset-0 z-50 backdrop-blur-sm flex items-center justify-center ${
+      dark ? "bg-black/60" : "bg-white/60"
+    }`}
+  >
+  
         <motion.div
           onClick={(e) => e.stopPropagation()}
           initial={{ scale: 0.95, opacity: 0 }}
